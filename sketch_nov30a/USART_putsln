@@ -1,0 +1,101 @@
+
+/**
+ * @file main.c
+ * @brief Programme principal pour la communication USART.
+ * @details Ce fichier contient l'implémentation complète du contrôle moteur,
+ *          à l'exception du régulateur PID.
+ *
+ * @par Application note :
+ *      AVR447: Commande sinusoïdale d'un moteur permanent triphasé à l'aide de
+ *      ATmega48/88/168
+ *
+ * @par Documentation :
+ *      Pour une documentation complète du code, des compilateurs pris en charge,
+ *      des paramètres de compilateur et des périphériques pris en charge, consultez readme.html
+ *
+ * @author Atmel Corporation : cihanhesen1@gmail.com \n
+ *         
+ *
+ * @version $Name: Jehan_1_0 $
+ * @version $Revision: 1.8 $
+ * 
+ * @version $Date: 2023/12/20 010:00:51 $
+ */
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+
+#define FOSC 16000000
+#define BAUD 9600
+#define MYUBRR FOSC / 16 / BAUD - 1
+
+#define FRAMING_ERROR (1 << FE0)
+#define PARITY_ERROR (1 << UPE0)
+#define DATA_OVERRUN (1 << DOR0)
+
+unsigned char flag0 = 0;
+unsigned char data;
+
+/*INIT */
+void USART_Init(unsigned int ubrr) {
+    UBRR0H = (unsigned char)(ubrr >> 8);
+    UBRR0L = (unsigned char)ubrr;
+    UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
+    UCSR0C = (3 << UCSZ00);
+    DDRB = 0B00100000;
+    PORTB = 0B00000000;
+}
+
+/* TRANSMETTRE */
+void USART0_Transmit(unsigned char data) {
+    while (!(UCSR0A & (1 << UDRE0)))
+        ;
+    UDR0 = data;
+}
+
+/* RECEVOIR */
+unsigned char USART0_Receive(void) {
+    while (!(UCSR0A & (1 << RXC0)))
+        ;
+    return UDR0;
+}
+
+/* INTERRUPTION */
+ISR(USART0_RX_vect) {
+    char status = UCSR0A;
+
+    // Vérifie les erreurs de communication
+    if ((status & (FRAMING_ERROR | PARITY_ERROR | DATA_OVERRUN)) == 0) {
+        data = UDR0;
+        flag0 = 1;
+    } else {
+        // Ajoutez votre code de gestion d'erreur ici
+        // Par exemple, désactivez l'interruption RXCIE0 si une erreur est détectée
+        UCSR0B &= ~(1 << RXCIE0);
+    }
+}
+
+/* Transmet une chaîne de caractères suivie d'un saut de ligne */
+void USART_putsln(unsigned char *str) {
+    do {
+        USART0_Transmit(*str);
+    } while (*++str != 0);
+
+    // Envoie un caractère de nouvelle ligne ('\n') pour passer à la ligne
+    USART0_Transmit('\n');
+}
+
+/* MAIN */
+int main(void) {
+    USART_Init(MYUBRR);
+    sei();
+
+    while (1) {
+        if (flag0 == 1) {
+            USART_putsln("Received: ");
+            flag0 = 0;
+        }
+        _delay_ms(1);
+    }
+}
